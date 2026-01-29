@@ -188,14 +188,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-dev \
         python3-requests  \
         python3-ipdb \
-        python3-ipython \
+        python3-venv \
         python3-pip \
         python-is-python3 \
         apt-transport-https \
         software-properties-common \
         gpg-agent \
         dirmngr \
-        openjdk-21-jdk-headless
+        openjdk-21-jdk-headless \
+        git
+
+# Setup JAVA_HOME
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 
 # Install Python dependencies
 RUN --mount=type=bind,source=src/ghidrathon/requirements.txt,target=/requirements.txt \
@@ -205,16 +209,20 @@ RUN --mount=type=bind,source=src/ghidrathon/requirements.txt,target=/requirement
 # Add ghidra
 COPY --from=ghidra-ghidrathon-downloader --link /ghidra /ghidra
 
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+# Add ghidrathon
+COPY --from=ghidra-ghidrathon-downloader --link /ghidrathon /ghidrathon
 
-# Build ghidrathon
-RUN --mount=type=bind,from=ghidra-ghidrathon-downloader,source=/ghidrathon,target=/ghidrathon,readwrite \
-    cd /ghidrathon && \
-    python -m pip install --break-system-packages -r requirements.txt && \
-    python ghidrathon_configure.py /ghidra && \
+RUN cd /ghidrathon && \
+    pip3 install --break-system-packages -r requirements.txt && \
+    python3 ghidrathon_configure.py /ghidra && \
     mkdir -p ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions && \
-    cd ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions && \
-    unzip /ghidrathon/Ghidrathon-v4.0.0.zip
+    cp -r /ghidrathon ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions/Ghidrathon
+
+# Setup pyghidraRun for python usage
+RUN python -m venv ~/.config/ghidra/ghidra_${GHIDRA_VERSION}/venv && \
+    ~/.config/ghidra/ghidra_${GHIDRA_VERSION}/venv/bin/python3 -m pip install -r /ghidrathon/requirements.txt && \
+    ~/.config/ghidra/ghidra_${GHIDRA_VERSION}/venv/bin/python3 -m pip install pyyaml && \
+    ~/.config/ghidra/ghidra_${GHIDRA_VERSION}/venv/bin/python3 /ghidrathon/ghidrathon_configure.py /ghidra
 
 # Copy entrypoint in
 COPY --link --chmod=0755 docker/ghidrathon-entrypoint.sh /ghidrathon-entrypoint.sh

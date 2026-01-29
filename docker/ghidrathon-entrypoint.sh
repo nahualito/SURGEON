@@ -26,14 +26,14 @@ SYMS=${FIRMWARE_SRC}/${FIRMWARE_BASE}_syms.yaml
 if [[ -f ${SYMS} ]]; then
 # Get all BBs for instrumentation (first postscript: get all BBs in the file,
 # second postscript: get "below HAL BBs in the file)
-    /ghidra/support/analyzeHeadless \
+    echo "y" | /ghidra/support/pyghidraRun -H \
         ${OUTDIR}/ghidraproj tmpProj \
         -import ${FIRMWARE_BIN} \
         -postScript /surgeon/src/ghidrathon/basic_blocks.py ${SYMS} \
         -postScript /surgeon/src/ghidrathon/hal.py ${SYMS} \
         -deleteProject
 else
-    /ghidra/support/analyzeHeadless \
+    echo "y" | /ghidra/support/pyghidraRun -H \
         ${OUTDIR}/ghidraproj tmpProj \
         -import ${FIRMWARE_BIN} \
         -postScript /surgeon/src/ghidrathon/basic_blocks.py \
