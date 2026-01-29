@@ -21,6 +21,7 @@ services:
     working_dir: /surgeon
     cap_add:
       - SYS_RAWIO # Required for mmapping address 0
+    privileged: true
 
   surgeon-debugger:
     extends: # Use env, volumes, capabilities from above service

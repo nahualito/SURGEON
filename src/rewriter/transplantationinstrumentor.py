@@ -76,8 +76,12 @@ class TransplantFactory:
                         break
 
         if not transplant:
-            log.info(f"No transplant for {insn}")
-            import ipdb; ipdb.set_trace()
+            log.warning(f"No transplant rule for {insn.mnemonic} {insn.op_str}. Replacing with NOP.")
+            if len(insn.bytes) == 4:
+                transplant = "nop.w"
+            else:
+                transplant = "nop"
+            #import ipdb; ipdb.set_trace()
 
         return transplant
 
@@ -413,7 +417,7 @@ class TransInstrumentor:
             # co-processor
             import ipdb
 
-            ipdb.set_trace()
+            #ipdb.set_trace()
             log.debug("co-processor: {} {}".format(insn.mnemonic, insn.op_str))
             transplantable = False
         else:

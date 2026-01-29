@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:latest
-ARG UBUNTU_VERSION=jammy
-ARG AFLPP_VERSION=4.05c
+ARG UBUNTU_VERSION=noble
+ARG AFLPP_VERSION=4.35c
 ARG MUSL_TOOLCHAIN=arm-linux-musleabi-native
-ARG GHIDRA_VERSION=10.1.5_PUBLIC
-ARG GHIDRA_SHA=17db4ba7d411d11b00d1638f163ab5d61ef38712cd68e462eb8c855ec5cfb5ed
-ARG GHIDRA_URL=https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_10.1.5_build/ghidra_10.1.5_PUBLIC_20220726.zip
-ARG GHIDRATHON_SHA=18ad5fe7adc940009f15de5219b3de1ffe6b6f571fc1e95318d45f074d21fbcc
-ARG GHIDRATHON_URL=https://codeload.github.com/mandiant/Ghidrathon/tar.gz/refs/tags/v1.0.0
+ARG GHIDRA_VERSION=12.0.1_PUBLIC
+ARG GHIDRA_SHA=85bd2990945f3a78df4d1e09f1bb1f40ab77be3bac62c6e7678900788c7f0f41
+ARG GHIDRA_URL=https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.0.1_build/ghidra_12.0.1_PUBLIC_20260114.zip
+ARG GHIDRATHON_SHA=0aff06f88f04e55d90b0504577ed6a9712ff095cef5ad9c829f27fcb31399f56
+ARG GHIDRATHON_URL=https://github.com/mandiant/Ghidrathon/releases/download/v4.0.0/Ghidrathon-v4.0.0.zip
 
 
 ################################################################################
@@ -116,9 +116,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-minimal \
         python3-pip \
         python3-venv \
-        libpython3.10 \
+        libpython3-dev \
         libpython3-dev:armhf \
-        ninja-build
+        ninja-build \
+        bash
 
 # Add musl toolchain
 COPY --from=musl-toolchain-downloader --link /$MUSL_TOOLCHAIN /opt/$MUSL_TOOLCHAIN
@@ -127,7 +128,7 @@ ENV PATH=$PATH:/opt/$MUSL_TOOLCHAIN/bin
 # Add Python venv => set up in different container for better caching
 COPY --from=python-builder --link /root/.venv /root/.venv
 
-COPY --from=aflplusplus/aflplusplus@sha256:18b15d4c9602390139523c6bc528fcc95baf959df014134cacfa6cf889a8fafe --link /usr/local/bin /opt/afl
+COPY --from=aflplusplus/aflplusplus@sha256:db5756f9351150c2ffbab9cbb5a92d8048b8d79f8f023e9d614db2e93372c005 --link /usr/local/bin /opt/afl
 ENV PATH=$PATH:/opt/afl
 
 # Copy entrypoint in
@@ -156,11 +157,11 @@ RUN echo "$GHIDRA_SHA  /ghidra.zip" | sha256sum -c - && \
     chmod +x /ghidra/ghidraRun
 
 # Download and decompress ghidrathon because ADD cannot (yet) do both at once
-ADD --link $GHIDRATHON_URL /ghidrathon.tar.gz
+ADD --link $GHIDRATHON_URL /ghidrathon.zip
 
-RUN echo "$GHIDRATHON_SHA  /ghidrathon.tar.gz" | sha256sum -c - && \
-    tar -xzf /ghidrathon.tar.gz && \
-    mv Ghidrathon* /ghidrathon
+RUN echo "$GHIDRATHON_SHA  /ghidrathon.zip" | sha256sum -c - && \
+    unzip /ghidrathon.zip -d /ghidrathon && \
+    rm /ghidrathon.zip
 
 
 ################################################################################
@@ -190,31 +191,30 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-ipython \
         python3-pip \
         python-is-python3 \
-        openjdk-18-jdk-headless \
         apt-transport-https \
         software-properties-common \
         gpg-agent \
-        dirmngr && \
-    add-apt-repository -y ppa:cwchien/gradle && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gradle
+        dirmngr \
+        openjdk-21-jdk-headless
 
 # Install Python dependencies
 RUN --mount=type=bind,source=src/ghidrathon/requirements.txt,target=/requirements.txt \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip3 install -r /requirements.txt
+    pip3 install --break-system-packages -r /requirements.txt
 
 # Add ghidra
 COPY --from=ghidra-ghidrathon-downloader --link /ghidra /ghidra
 
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+
 # Build ghidrathon
 RUN --mount=type=bind,from=ghidra-ghidrathon-downloader,source=/ghidrathon,target=/ghidrathon,readwrite \
     cd /ghidrathon && \
-    gradle -PGHIDRA_INSTALL_DIR=/ghidra && \
-    (/ghidra/support/analyzeHeadless --help || mkdir -p ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions) && \
+    python -m pip install --break-system-packages -r requirements.txt && \
+    python ghidrathon_configure.py /ghidra && \
+    mkdir -p ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions && \
     cd ~/.ghidra/.ghidra_${GHIDRA_VERSION}/Extensions && \
-    unzip /ghidrathon/dist/ghidra_${GHIDRA_VERSION}_*_ghidrathon.zip
+    unzip /ghidrathon/Ghidrathon-v4.0.0.zip
 
 # Copy entrypoint in
 COPY --link --chmod=0755 docker/ghidrathon-entrypoint.sh /ghidrathon-entrypoint.sh

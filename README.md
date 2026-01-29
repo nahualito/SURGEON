@@ -5,9 +5,19 @@ performance, high fidelity re-hosting for embedded systems' firmware.
 
 SURGEON was presented at [BAR '24][bar24] ([paper][paper]).
 
+The project on itself has been stale for a while, so I forked it and this
+has been updated to work with recent versions of Docker, Docker Buildx and
+AFL++. It also uses Ubuntu 24.04 LTS as the base system instead of
+Ubuntu 22.04 LTS.
+
+The original version were locked into the firmware examples and contained
+multiple hardcoded paths. This version allows to specify the firmware
+to run/fuzz/debug on the command line via the `FIRMWARE` variable and not have 
+to edit any files.
+
 ## Prerequisites
 
-We assume an up-to-date Ubuntu system (Jammy Jellyfish, 22.04 LTS) as the base
+We assume an up-to-date Ubuntu system (24.04 LTS) as the base
 system.
 You should be able to follow any instructions below with a Debian installation,
 different Ubuntu versions or other distributions as well, but your mileage may
@@ -29,7 +39,13 @@ following snippet to `/etc/docker/daemon.json` and restarting the daemon:
 ```
 
 Afterwards, enable cross-compilation/cross-execution by registering the
-corresponding binfmt handlers through a Docker container:
+corresponding binfmt handlers through either running 
+
+```bash
+make setup-binfmt
+```
+or executing the following command in your host system to enable running
+Arm binaries inside of Docker containers on non-Arm hosts:
 
 ```bash
 # Register the QEMU backend with binfmt
@@ -49,7 +65,12 @@ distribution/init system provides.
 If `sudo docker buildx ls` after this step shows you an active builder instance
 (ideally, the `default` instance) that supports the target Arm architectures,
 you're good to go.
-If not, create and enable a cross-builder as follows:
+If not, create and enable a cross-builder either by running
+
+```bash
+make setup-crossbuild
+```
+or a docker command as follows:
 
 ```bash
 # Create a cross-builder instance
@@ -76,6 +97,10 @@ If the below subsections don't answer your questions, check the main
 
 `make build` builds the image, `make run` spawns a container.
 
+the first build may take a while as it needs to download and install
+various dependencies. So go get a coffee, read a book such as [POC or GTFO](https://www.alchemistowl.org/pocorgtfo/),  
+or do something else productive in the meantime.
+
 Specify the firmware to run via the `FIRMWARE` variable which takes the path
 relative to the [`firmware`][firmware] directory as a value.
 For example, to run the P2IM CNC firmware in SURGEON, you only need to invoke
@@ -87,6 +112,87 @@ For fuzzing, just replace `run` with `run-fuzz` in the command above, e.g.,
 `make run-fuzz FIRMWARE=p2im/cnc`.
 This will spawn a container with AFL++ fuzzing the specified firmware for 24
 hours.
+
+### Adding new Firmware to attack
+The process involves three phases: Setup, Manual Analysis (Symbols) and 
+Automated Analysis (Basic Blocks and Peripheral Mapping).
+
+
+**Phase 1: Setup**
+1. Create the target directory under `/firmware` (e.g., `/firmware/my_target`).
+```bash
+mkdir firmware/my_target
+```
+2. Place the firmware binary (e.g., `firmware.bin`) in the newly created
+directory.
+```bash
+cp /path/to/firmware.elf firmware/my_target/
+```
+3. Create ```meson.build``` file in the target directory with the following content:
+```meson
+exe = files('firmware.elf')
+```
+**Phase 2: Manual Analysis (_syms.yaml)**
+
+You must tell SURGEON which functions are "Hardware Abstraction Layer" (HAL) functions (e.g., UART receive, Timer init). SURGEON will hook these functions and redirect them to Python.
+
+Find Addresses: Use nm, readelf, or open the binary in Ghidra to find the virtual addresses (hex) of the functions you want to hook.
+
+```bash
+nm --defined-only -C -n firmware.elf | grep " T " | awk '{print "- name: " $3 "\n  addr: [0x" $1 "]"}' > ../../firmware/firmware.elf/firmware.elf_syms.yaml
+```
+**Critical Verification Step**
+
+After generating the file, open it and check for "junk" symbols. Compiler toolchains often add internal labels that you do not want to hook, such as:
+
+- $t, $d (Thumb/Data markers)
+- __libc_init_array
+- Reset_Handler (You usually don't want to hook the reset vector itself)
+
+You should manually delete these lines from the YAML file, or the autogen script might try to generate invalid C function names for them.
+
+**Phase 3: Automated Analysis (Basic Blocks and Peripheral Mapping)**
+
+You do not create the bbs, cov-bbs, or hal-bbs files manually. The make run-ghidra command generates them using the scripts in [src/ghidraton](src/ghidraton).
+
+1. Run the Analysis: This starts a Docker container, loads your ELF into Ghidra, and runs basic_blocks.py and hal.py.
+
+```bash
+make run-ghidra FIRMWARE=firmware.elf
+```
+2. Retrieve the Files: The scripts save the output to the build directory (out/), not your source directory. You must copy them back to your firmware folder to verify them or commit them.
+
+```bash
+# Copy Coverage Basic Blocks (Calculated by basic_blocks.py)
+cp out/my_target/ghidraproj/firmware.elf-cov-bbs.yaml firmware/firmware.elf/
+
+# Copy HAL Basic Blocks (Calculated by hal.py using your _syms.yaml)
+cp out/my_target/ghidraproj/firmware.elf-hal-bbs.yaml firmware/firmware.elf/
+```
+3. Create the "Transplantation" Blocks (trans-bbs): The build system requires a -trans-bbs.yaml file. This defines which code blocks are safe to move/execute. For a standard fuzzing run, this is usually identical to your coverage blocks.
+
+```bash
+# Duplicate cov-bbs to trans-bbs
+cp firmware/my_target/my_target.elf-cov-bbs.yaml firmware/my_target/my_target-trans-bbs.yaml
+```
+
+**Final Step: FUZZ!**
+
+Now you can fuzz the firmware with SURGEON:
+```bash
+make run-fuzz FIRMWARE=my_target/firmware.elf
+```
+
+### Why are there different files?
+In the SURGEON architecture, these files serve different purposes:
+
+*-trans-bbs.yaml (Transplantation): Tells the Rewriter which basic blocks are "Application Code" that must be preserved and moved to the new binary. In complex setups (like the p2im examples), this excludes the HAL libraries found by hal.py.
+
+*-cov-bbs.yaml (Coverage): Tells the Fuzzer (AFL++) which basic blocks to instrument for coverage tracking.
+
+*-bbs.yaml (Raw): The raw output from Ghidra listing every basic block found.
+
+For a custom target where you aren't filtering out vendor libraries, **all three files are usually identical copies of each other.**
 
 ### Debugging
 
@@ -114,6 +220,36 @@ gdb-multiarch -iex "set confirm off" \
          -iex "add-symbol-file <path_to_rewritten_fw_binary>" \
          -ex "target remote :1234" \
          <path_to_compiled_runtime>
+```
+[^gdb-docker]: Running gdb inside of Docker will by default not work due to
+               restrictions when accessing the ptrace API.
+               If you are willing to fiddle with the Docker container's
+               permissions/capabilities, you should be able to get that working
+               as well, though. For simplicity, we recommend running gdb on the
+               host.
+
+If you MUST run gdb inside of Docker, you can spawn the container
+with `--cap-add=SYS_PTRACE --security-opt seccomp=unconfined` flags to allow
+ptrace access.
+
+Inside the container you can then run gdb as follows:
+
+```bash
+# 1. Set environment variables
+export INSTR_CTRL_ADDR=0x50000000 #Change for your firmware
+export SHM_ADDR=0x60000000 #Change for your firmware
+export AFL_MAP_SIZE=65536 #Change for your firmware
+export PYTHONHOME=/usr
+export PYTHONPATH=/usr/lib/python3:/usr/lib/python3/dist-packages
+
+# 2. Start QEMU (Waiting for GDB)
+# We use 'cortex-a9' as it is a very standard, stable 32-bit ARM core
+qemu-arm-static -g 1234 -L /usr/arm-linux-gnueabihf \
+    -cpu cortex-a9 \
+    ./out/firmware.elf/src/runtime/runtime \
+    -x NOFORK \
+    -f out/firmware.elf/firmware.elf-rewritten \
+    -t out/firmware.elf/firmware.elf-rewritten-tramp
 ```
 
 #### Increasing Debug Output
@@ -161,9 +297,3 @@ Please check [the license file][license] for more information.
 [make-main]: /Makefile
 [paper]: https://hexhive.epfl.ch/publications/files/24BAR.pdf
 
-[^gdb-docker]: Running gdb inside of Docker will by default not work due to
-               restrictions when accessing the ptrace API.
-               If you are willing to fiddle with the Docker container's
-               permissions/capabilities, you should be able to get that working
-               as well, though. For simplicity, we recommend running gdb on the
-               host.

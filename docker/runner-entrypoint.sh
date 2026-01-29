@@ -28,7 +28,11 @@ set -ue
 source /root/.venv/bin/activate
 
 # Setup meson if not already done
-if [[ ! -d ${OUTDIR} ]]; then
+if [[ ! -d ${OUTDIR} ]] || [[ ! -f ${OUTDIR}/meson-private/build.dat ]]; then
+	echo "[INFO] Build directory missing or corrupt. Running meson setup ..."
+
+	rm -rf ${OUTDIR}
+
     meson setup \
         --backend=ninja \
         --layout=mirror \
@@ -40,14 +44,27 @@ fi
 
 [[ "${ACTION}" == "fuzz" ]] && BUILDTYPE="release" || BUILDTYPE="debug"
 
+#meson setup ${OUTDIR} --reconfigure
+
 # Configure meson for the firmware and build type
-meson configure ${OUTDIR} --buildtype=${BUILDTYPE} -Dfirmware=${FIRMWARE}
+meson configure ${OUTDIR} --buildtype=${BUILDTYPE} -Dfirmware=${FIRMWARE} -Doptimization=2
 
 # Build runtime and rewrite firmware if necessary
 ninja -C ${OUTDIR}
 
 RUNTIME_BIN=${OUTDIR}/src/runtime/runtime
 FIRMWARE_BIN=${OUTDIR}/${FIRMWARE_BASE}
+
+if [[ ! -d ${WORKDIR}/out/afl-in ]]; then
+    mkdir -p ${WORKDIR}/out/afl-in
+fi
+
+if [[ -f ${FIRMWARE_SRC}/seed.txt ]]; then
+    cp ${FIRMWARE_SRC}/seed.txt ${WORKDIR}/out/afl-in/
+else
+    echo "Sample input" > ${WORKDIR}/out/afl-in/seed.txt
+fi
+
 # Run the runtime (if it was built successfully)
 if [[ "$ACTION" == "run" ]]; then
     ${RUNTIME_BIN} -x NOFORK -f ${FIRMWARE_BIN}-rewritten -t ${FIRMWARE_BIN}-rewritten-tramp

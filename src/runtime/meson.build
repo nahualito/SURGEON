@@ -8,7 +8,8 @@ runtime_srcs = files(
     'interrupts.c',
     'interrupts_asm.S',
     'runtime.c',
-    'timer.c'
+    'timer.c',
+    'hacl_stubs.c',
 )
 runtime_srcs += autogen_c
 
@@ -23,7 +24,7 @@ expat_dep = dependency('expat', static: true)
 
 runtime_linker_script = files(runtime_path / 'link.lds')
 
-runtime_cflags = get_option('build.c_args')
+runtime_cflags = []
 
 if py_dep.found()
     # Disabling the warning is required because of native Python extensions

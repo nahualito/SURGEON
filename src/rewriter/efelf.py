@@ -103,9 +103,9 @@ class EFElf:
         try:
             code = self.assemble(asm)
         except Exception as e:
-            import ipdb
+            print(f"Assembly failed for: {asm} (Offset: {call_off})")
+            raise e
 
-            ipdb.set_trace()
         self._raw_elf.write(code)
         return
 
@@ -131,9 +131,9 @@ class EFElf:
                 for insn in self._md.disasm(code[code_start:code_end], start):
                     insns.append(EFInstruction(insn))
                     off += insn.size
-                    # log.debug(
-                    #     f"{insn.address:#x}:\t{insn.mnemonic}\t{insn.op_str}"
-                    # )
+                    log.debug(
+                        f"{insn.address:#x}:\t{insn.mnemonic}\t{insn.op_str}"
+                    )
                     if off > end:
                         break
             except CsError as e:

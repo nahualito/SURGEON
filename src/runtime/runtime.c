@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <signal.h>
 
 /* ##############   Typedefs   ############## */
 typedef enum _execmode_e {
@@ -32,7 +33,7 @@ static void NORETURN usage(const char *exec);
 static void fork_target(void *entrypoint);
 static uintptr_t load_elf(const char *elf_filename);
 static success_t verify_header(FILE *elf_file);
-static success_t map_rw_region(uintptr_t base, size_t size);
+success_t map_rw_region(uintptr_t base, size_t size);
 static success_t map_elf(FILE *elf_file, uintptr_t *entrypoint);
 static void UNUSED print_coverage_map(char *shm);
 static inline void NORETURN call_elf(const void *entrypoint);
@@ -44,7 +45,34 @@ void USED dispatch_c(void);
 /* The stack we use for our code to make sure it's not colliding with the FW */
 uint8_t stack[STACKSIZE + ARGENVSIZE] = {0};
 
+void debug_segfault(int sig, siginfo_t *si, void *unused) {
+    (void)unused;
+
+    char msg[128];
+
+    if (sig == SIGSEGV) {
+        snprintf(msg, sizeof(msg), "\n[DEBUG] CRASH! SIGSEGV ar 0x%p\n", si->si_addr);
+    } else if (sig == SIGBUS) {
+        snprintf(msg, sizeof(msg), "\n[DEBUG] CRASH! SIGBUS (Memory Error) ar 0x%p\n", si->si_addr);
+    } else {
+        snprintf(msg, sizeof(msg), "\n[DEBUG] CRASH! Signal %d at 0x%p\n", sig, si->si_addr);
+    }
+
+    if (write(2, msg, strlen(msg)) < 0) {
+        /* Ignore write errors */
+    }
+    _exit(1);
+}
+
 int main(int argc, char *argv[], char *envp[]) {
+    /* We setup some printing */
+    struct sigaction sa;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_sigaction = debug_segfault;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+
     /* We need to pivot the stack to a location we control. The reason for that
      * is that we observed situations where the stack was mapped into regions
      * overlapping with regions that we use for setting up the firmware address
@@ -483,7 +511,7 @@ static success_t verify_header(FILE *elf_file) {
  * @return success_t SUCCESS if the region could successfully be mapped, ERROR
  * otherwise
  */
-static success_t map_rw_region(uintptr_t base, size_t size) {
+success_t map_rw_region(uintptr_t base, size_t size) {
     /* Prepare mmap arguments */
     void *target = (void *)ROUND_PAGE_DOWN(base);
     size_t length = ROUND_PAGE_UP(size);

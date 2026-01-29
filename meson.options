@@ -1,10 +1,5 @@
 
-option('firmware', type : 'combo', 
-       choices : ['fw-example', 'uart-terminal', 'cov-test', 'p2im/cnc',
-                  'p2im/console', 'p2im/drone', 'p2im/gateway', 
-                  'p2im/heat-press', 'p2im/plc', 'p2im/reflow-oven', 
-                  'p2im/robot', 'p2im/soldering-iron', 'p2im/steering-control'
-                 ],
+option('firmware', type : 'string', 
        value : 'p2im/console',
        description : 'Choose which firmware to build.'
 )

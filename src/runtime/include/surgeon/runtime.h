@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdint.h>
 
 #ifndef RUNTIME_H
 #define RUNTIME_H
@@ -56,4 +57,8 @@ typedef enum _success_e {
  * @return void*  Address of the new mapping.
  */
 void *map_region_from_env(const char *env_var, size_t size);
+
+// [ADDED] Expose the mapping function
+success_t map_rw_region(uintptr_t base, size_t size);
+
 #endif /*RUNTIME_H*/

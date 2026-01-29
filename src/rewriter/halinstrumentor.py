@@ -111,9 +111,7 @@ class HALInstrumentor:
             """
         return self._encode(code, addr=source_addr)
 
-    def gen_patches(
-        self, hal_func: Dict[str, Any], text_start: int, text_end: int
-    ) -> Tuple[int, bytes]:
+    def gen_patches(self, hal_func: Dict[str, Any]) -> Tuple[int, bytes]:
         symbol = hal_func["name"]
         addresses = hal_func["addr"]
         handler = hal_func.get("handler", None)
@@ -121,9 +119,6 @@ class HALInstrumentor:
         log.debug(f"Rewriting {symbol}@{[hex(addr) for addr in addresses]}")
 
         for addr in addresses:
-            if addr < text_start or addr >= text_end:
-                raise HALInstrumentorException("HAL function outside of .text section.")
-
             if handler is None:
                 # A symbol that we only keep around for its address but that we do not actually want to handle
                 continue
@@ -149,27 +144,46 @@ class HALInstrumentor:
                     "'halucinator' handlers"
                 )
 
-            if addr + len(patch) >= text_end:
-                raise HALInstrumentorException(
-                    "HAL function patch exceeds .text section"
-                )
             # Use the function as an iterator
             yield addr, patch
 
     def instrument(self) -> Tuple[BinaryIO, List]:
-        section = self._elf.get_section_by_name(".text")
-        start = section["sh_addr"]
-        offset = section["sh_offset"]
-        end = start + section["sh_size"]
-        assert start < end, "sections start after end"
-
-        log.debug(f".text:\t{start:#x} - {end:#x}")
+        # Identify all executable sections (SHF_EXECINSTR = 4)
+        exec_sections = []
+        for section in self._elf.iter_sections():
+            if section['sh_flags'] & 4:
+                exec_sections.append(section)
 
         patch_addrs = list()
         for func in self._hal_funcs or list():
-            for addr, patch in self.gen_patches(func, start, end):
+            for addr, patch in self.gen_patches(func):
+                
+                # Find which section this address belongs to
+                target_section = None
+                for section in exec_sections:
+                    start = section["sh_addr"]
+                    end = start + section["sh_size"]
+                    if start <= addr < end:
+                        target_section = section
+                        break
+                
+                if not target_section:
+                    log.warning(f"Address {hex(addr)} is not in an executable section. Skipping rewrite.")
+                    continue
+
+                # Check for overflow in that specific section
+                s_start = target_section["sh_addr"]
+                s_end = s_start + target_section["sh_size"]
+                if addr + len(patch) >= s_end:
+                    raise HALInstrumentorException(
+                        f"HAL function patch at {hex(addr)} exceeds section {target_section.name}"
+                    )
+
+                # Calculate offset in the file
+                file_offset = target_section["sh_offset"] + (addr - s_start)
+                
                 patch_addrs.append((addr, len(patch)))
-                self._rw_elf.seek(offset + (addr - start))
+                self._rw_elf.seek(file_offset)
                 self._rw_elf.write(patch)
 
         self._rw_elf.seek(0)

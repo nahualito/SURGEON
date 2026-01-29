@@ -95,9 +95,12 @@ def get_funcs(runtime: BinaryIO) -> Dict:
     # Create a dictionary of symbols
     func_dict = dict()
     for func in symtab.iter_symbols():
-        if func.entry["st_info"]["type"] != "STT_FUNC":
-            # Only get functions
+        is_func = func.entry["st_info"]["type"] == "STT_FUNC"
+        is_tramp = func.name == "trampoline_base_addr"
+
+        if not (is_func or is_tramp):
             continue
+
         func_dict[func.name] = func.entry["st_value"]
 
     return func_dict
