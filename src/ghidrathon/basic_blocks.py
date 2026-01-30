@@ -21,32 +21,18 @@ def get_bbs(funcs, blockModel, monitor, deny_list=None):
 
         while block.hasNext():
             bb = block.next()
+            # FIX: Force cast to Python int to avoid JPype object serialization
             bbs.add(
-                (bb.getMinAddress().getOffset(), bb.getMaxAddress().getOffset())
+                (int(bb.getMinAddress().getOffset()), int(bb.getMaxAddress().getOffset()))
             )
     return bbs
 
 
 def main(deny_list_path=None):
-
-    # if deny_list_path:
-        # with open(deny_list_path, "r") as f:
-        #     deny_list = yaml.load(f, Loader=yaml.Loader)
-
-        # if deny_list:
-        #     deny_list = [d["addr"] for d in deny_list]
-        # else:
-        # deny_list = None
-
-    # currentProgram.setImageBase(toAddr(0), False)
-    # ghidra.program.model.data.DataUtilities.isUndefinedData(
-    #     currentProgram, currentAddress
-    # )
     funcs = currentProgram.getFunctionManager().getFunctions(True)
     monitor = ghidra.util.task.ConsoleTaskMonitor()
     blockModel = ghidra.program.model.block.SimpleBlockModel(currentProgram)
 
-    # bbs = get_bbs(funcs, blockModel, monitor, deny_list)
     bbs = get_bbs(funcs, blockModel, monitor)
     bbs = list(bbs)
 

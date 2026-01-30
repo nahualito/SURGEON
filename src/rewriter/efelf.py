@@ -64,16 +64,16 @@ class EFElf:
         return (start, end)
 
     def assemble(self, asm: str) -> bytes:
-
         try:
-            encoding: List[int]
-            encoding, _ = self._ks.asm(asm.encode())
+            # Keystone returns (encoding, count). Encoding is a list of ints.
+            res = self._ks.asm(asm.encode())
+            encoding = res[0]
+            if not encoding:
+                raise KsError(f"Keystone returned empty encoding for '{asm}'")
+            return bytes(encoding)
         except KsError as e:
-            log.error(e)
-            import ipdb
-
-            ipdb.set_trace()
-        return bytes(encoding)
+            # Re-raise the error so the caller (patch_detour) can catch it and print the details
+            raise e
 
     def apply_transplant(self, insn: EFInstruction, transplant: str):
 

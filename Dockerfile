@@ -32,7 +32,8 @@ FROM --platform=linux/arm64 ubuntu:$UBUNTU_VERSION AS python-builder
 RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
-# Install base packages (including arm32 libraries and headers)
+# Install base packages
+# ADDED: python3-dev (Required for Python.h during Keystone compilation)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -41,22 +42,28 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         gcc \
         make \
         cmake \
-        python3-minimal \
+        python3-dev \
         python3-pip \
-        python3-venv
+        python3-venv \
+        git
 
-# Install Python dependencies for all modules into the venv (see wildcard below)
+RUN python3 -m venv /root/.venv
+ENV PATH="/root/.venv/bin:$PATH"
+
+# FIX: Set to 1 to guarantee no OOM crash. 
+# LLVM compilation is very heavy; 2 threads might still crash a standard container.
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
+
+# Install Python dependencies
 RUN --mount=type=bind,source=src,target=/src \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    python3 -m venv /root/.venv && \
-    . /root/.venv/bin/activate && \
     pip3 install -U \
         wheel \
+        setuptools \
         meson && \
     for req in /src/*/requirements.txt; do \
         pip3 install -r $req; \
     done
-
 
 ################################################################################
 # Final SURGEON debugger image                                                 #

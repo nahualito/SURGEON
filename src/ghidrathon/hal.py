@@ -8,7 +8,8 @@ def get_bbs_dfs(funcs: List, monitor, block_model, visited: Set[int]) -> Set[int
     ret: Set[int] = set()
     for func in funcs:
         # Check whether function has already been visited
-        addr: int = func.getEntryPoint().getOffset()
+        # FIX: Cast to int
+        addr: int = int(func.getEntryPoint().getOffset())
         if addr not in visited:
             visited.add(addr)
             print(f"#visited: {len(visited)}")
@@ -16,7 +17,8 @@ def get_bbs_dfs(funcs: List, monitor, block_model, visited: Set[int]) -> Set[int
             block = block_model.getCodeBlocksContaining(func.getBody(), monitor) 
             while block.hasNext():
                 bb = block.next()
-                ret.add(bb.getMinAddress().getOffset())
+                # FIX: Cast to int
+                ret.add(int(bb.getMinAddress().getOffset()))
             # Go down the graph
             ret |= get_bbs_dfs(func.getCalledFunctions(monitor), monitor, block_model, visited)
     return ret

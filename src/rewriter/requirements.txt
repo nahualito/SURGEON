@@ -1,8 +1,9 @@
 -i https://pypi.org/simple
-keystone-engine==0.9.2
+keystone-engine @ git+https://github.com/keystone-engine/keystone.git@master#subdirectory=bindings/python
 pyelftools>=0.29
 pyyaml>=6.0.1
-capstone==4.0.2
+capstone>=4.0.2
 makeelf==0.3.4
 ipdb==0.13.9
-ipython==8.7.0
+ipython>=8.7.0
+jpype1

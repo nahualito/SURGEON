@@ -164,16 +164,16 @@ make run-ghidra FIRMWARE=firmware.elf
 
 ```bash
 # Copy Coverage Basic Blocks (Calculated by basic_blocks.py)
-cp out/my_target/ghidraproj/firmware.elf-cov-bbs.yaml firmware/firmware.elf/
+cp out/firmware.elf/ghidraproj/firmware.elf-cov-bbs.yaml firmware/firmware.elf/firmware.elf-cov.yaml
 
 # Copy HAL Basic Blocks (Calculated by hal.py using your _syms.yaml)
-cp out/my_target/ghidraproj/firmware.elf-hal-bbs.yaml firmware/firmware.elf/
+cp out/firmware.elf/ghidraproj/firmware.elf-hal-bbs.yaml firmware/firmware.elf/
 ```
 3. Create the "Transplantation" Blocks (trans-bbs): The build system requires a -trans-bbs.yaml file. This defines which code blocks are safe to move/execute. For a standard fuzzing run, this is usually identical to your coverage blocks.
 
 ```bash
 # Duplicate cov-bbs to trans-bbs
-cp firmware/my_target/my_target.elf-cov-bbs.yaml firmware/my_target/my_target-trans-bbs.yaml
+cp firmware/firmware.elf/firmware.elf-cov-bbs.yaml firmware/firmware.elf/firmware.elf-trans-bbs.yaml
 ```
 
 **Final Step: FUZZ!**
